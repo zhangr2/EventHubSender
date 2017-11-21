@@ -1,9 +1,6 @@
 using Microsoft.Azure.WebJobs;
 using Microsoft.Azure.WebJobs.Host;
 using Microsoft.Azure.WebJobs.ServiceBus;
-using Microsoft.WindowsAzure.Storage;
-using Microsoft.WindowsAzure.Storage.Blob;
-using System.IO;
 
 using Amazon;
 using Amazon.S3;
@@ -12,75 +9,83 @@ using Amazon.S3.Transfer;
 using System;
 using System.Text;
 using Microsoft.ServiceBus.Messaging;
+using System.IO;
+using Newtonsoft.Json.Linq;
+using Amazon.S3.IO;
 
-namespace FunctionApp3
+namespace FunctionApp4
 {
     public static class Function1
     {
         [FunctionName("Function1")]
-        public static void Run([EventHubTrigger("test", Connection ="EventHub")]EventData myEventHubMessage, TraceWriter log)
+        public static void Run([EventHubTrigger("zhangrepc", Connection = "EventHub")]EventData[] myEventHubMessage, TraceWriter log)
         {
-            //log.Info($"C# Event Hub trigger function processed a message: {myEventHubMessage}");
-            log.Info($"{Encoding.UTF8.GetString(myEventHubMessage.GetBytes())}");
+            log.Info($"C# Event Hub trigger function processed a message: {myEventHubMessage}");
 
-            string accessKey = "";
-            string secretKey = "";
-            //AmazonS3Config config = new AmazonS3Config();
+            string accessKey = Environment.GetEnvironmentVariable("accessKey");
+            string secretKey = Environment.GetEnvironmentVariable("secretKey");
 
             AmazonS3Client s3Client = new AmazonS3Client(
-                    accessKey,
-                    secretKey,
-                    RegionEndpoint.USWest2
-        );
+                   accessKey,
+                   secretKey,
+                   RegionEndpoint.USWest2);
 
             TransferUtility utility = new TransferUtility(s3Client);
 
-            string BucketName = "myalooma";
-            string key = "test.json";
+            String now = DateTime.UtcNow.ToString();
 
-            //string path = "C:\\Users\\zhangr2\\test.json";
-            //FileStream fs = File.OpenWrite(path);
-            //Byte[] info =
-            //    new UTF8Encoding(true).GetBytes(myEventHubMessage);
-
-            //fs.Write(info, 0, info.Length);
-
+            String BucketName = "myalooma";
+            String key = now+".json";
 
 
             var memStream = new MemoryStream();
 
+            
+
+            S3FileInfo s3FileInfo = new S3FileInfo(s3Client, BucketName, key);
+            if (!s3FileInfo.Exists)
+            {
+                PutObjectRequest pr = new PutObjectRequest();
+                pr.BucketName = BucketName;
+                pr.Key = key;
+                s3Client.PutObject(pr);
+            }
+
             GetObjectRequest request = new GetObjectRequest()
             {
                 BucketName = "myalooma",
-                Key = "test.json"
+                Key = key
             };
+
+
             GetObjectResponse response = s3Client.GetObject(request);
             Stream responseStream = response.ResponseStream;
             responseStream.CopyTo(memStream);
 
 
             var streamWriter = new StreamWriter(memStream);
-            streamWriter.WriteLine(Encoding.UTF8.GetString(myEventHubMessage.GetBytes()));
-
-            //connect to storagy of Azure
-            //CloudStorageAccount storageAccount = CloudStorageAccount.Parse("DefaultEndpointsProtocol=https;AccountName=devstoreaccount1;AccountKey=Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==");
-            //CloudBlobClient blobClient = storageAccount.CreateCloudBlobClient();
-            //CloudBlobContainer container = blobClient.GetContainerReference("[Your container]");
-            //var fileToUpload = new MemoryStream();
+            //log.Info($"{Encoding.UTF8.GetString(myEventHubMessage.GetBytes())}");
+            //log.Info($"{myEventHubMessage.Offset}");
+            //var jsonBody = Encoding.UTF8.GetString(myEventHubMessage.GetBytes());
+            //var myPoco = JObject.Parse(jsonBody);
 
 
+            foreach(EventData ed in myEventHubMessage)
+            {
+                log.Info($"{Encoding.UTF8.GetString(ed.GetBytes())}");
+                var jsonBody = Encoding.UTF8.GetString(ed.GetBytes()); ;
+                streamWriter.WriteLine(jsonBody);
+            }
+
+            //streamWriter.WriteLine(jsonBody);
             streamWriter.Flush();
             memStream.Seek(0, SeekOrigin.Begin);
-            
+
             utility.Upload(memStream, BucketName, key);
 
-            //System.IO.File.WriteAllBytes("local.json", memStream.ToArray());
-            //foreach (string message in myEventHubMessage)
-            //{
-            //    //CloudBlockBlob blockBlob = container.GetBlockBlobReference("message-[File Name]");
 
-            //    utility.Upload(fileToUpload, BucketName, key);
-            //}
+
+
 
 
 
